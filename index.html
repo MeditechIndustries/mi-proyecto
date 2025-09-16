@@ -2,21 +2,25 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>AR_MTD</title>
+  <title>Meditech AR</title>
+
+  <!-- A-Frame y MindAR -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
     html, body {
-      margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000;
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      overflow: hidden; background: #000;
     }
     a-scene {
       position: fixed !important;
       top: 0; left: 0;
-      width: 100% !important;
-      height: 100% !important;
+      width: 100% !important; height: 100% !important;
     }
-    #unmute-btn {
+    /* Botón para activar sonido */
+    #playButton {
       display: none;
       position: fixed;
       z-index: 9999;
@@ -37,9 +41,8 @@
     }
   </style>
 </head>
-
 <body>
-  <button id="unmute-btn">Activar sonido</button>
+  <button id="playButton">▶ Reproducir con sonido</button>
 
   <a-scene mindar-image="imageTargetSrc: targets.mind;" embedded color-space="sRGB"
            renderer="colorManagement: true, physicallyCorrectLights"
@@ -47,9 +50,10 @@
            device-orientation-permission-ui="enabled: false">
 
     <a-assets>
-      <!-- CAMBIA este src por un enlace directo CORS, no GitHub -->
-      <video id="ar-video" src="https://TU_HOST/video.mp4" preload="auto" loop="false"
-             playsinline webkit-playsinline muted crossorigin="anonymous"></video>
+      <!-- Video desde GitHub (raw URL) -->
+      <video id="ar-video" 
+             src="https://raw.githubusercontent.com/MeditechIndustries/mi-proyecto/main/video.mp4"
+             preload="auto" loop="false" playsinline webkit-playsinline muted crossorigin="anonymous"></video>
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
@@ -64,43 +68,41 @@
     const video = document.getElementById("ar-video");
     const plane = document.getElementById("video-plane");
     const target = document.getElementById("video-target");
-    const unmuteBtn = document.getElementById("unmute-btn");
+    const playButton = document.getElementById("playButton");
 
-    // Ajustar automáticamente relación de aspecto
+    // Ajusta automáticamente el plano según la relación de aspecto real del video
     function ajustarPlano() {
       const aspect = video.videoWidth / video.videoHeight;
-      const width = 1;
+      const width = 1; // ancho fijo del plano
       const height = width / aspect;
       plane.setAttribute('width', width);
       plane.setAttribute('height', height);
     }
     video.addEventListener('loadedmetadata', ajustarPlano);
 
-    // Detecta marcador
-    target.addEventListener("targetFound", async () => {
+    // Mostrar botón para reproducir sonido
+    video.addEventListener('canplay', () => {
+      playButton.style.display = "block";
+    });
+
+    // Botón para desbloquear audio y reproducir video
+    playButton.addEventListener("click", async () => {
+      video.muted = false; // habilitar audio
       try {
-        video.currentTime = 0;
-        await video.play(); // autoplay silencioso
-        if (video.muted) unmuteBtn.style.display = "block";
-      } catch (err) {
-        console.warn("Autoplay bloqueado", err);
-        unmuteBtn.style.display = "block";
+        await video.play();
+        playButton.style.display = "none";
+      } catch(err) {
+        console.error("Error al reproducir video:", err);
       }
+    });
+
+    // Eventos AR
+    target.addEventListener("targetFound", () => {
+      if (!video.paused) video.play();
     });
 
     target.addEventListener("targetLost", () => {
       video.pause();
-    });
-
-    // Botón para activar sonido
-    unmuteBtn.addEventListener("click", async () => {
-      video.muted = false;
-      try {
-        await video.play();
-        unmuteBtn.style.display = "none";
-      } catch (err) {
-        console.error("No se pudo reproducir con audio", err);
-      }
     });
   </script>
 </body>
