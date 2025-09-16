@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MindAR - Video on Marker (ejemplo)</title>
+
+  <!-- A-Frame y MindAR (CDN). Estas versiones son compatibles con los ejemplos oficiales. -->
+  <!-- Fuente: Quick Start / examples MindAR. -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  
+  <style>
+    html, body { height: 100%; margin: 0; background: #000; }
+    #ui {
+      position: absolute; z-index: 1000; top: 10px; left: 10px;
+      display: flex; gap: 8px; align-items: center;
+      font-family: Arial, sans-serif; color: #fff;
+    }
+    #unmute-btn {
+      display: none; /* aparece solo si queremos que el usuario active audio */
+      padding: 8px 12px; border-radius: 6px; background:#1e90ff; color:#fff; border:none;
+      cursor:pointer;
+    }
+    #debug { font-size: 14px; opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <!-- Pequeña UI para controles y debug -->
+  <div id="ui">
+    <button id="start-ar-btn">Iniciar AR</button>
+    <button id="stop-ar-btn">Detener AR</button>
+    <button id="unmute-btn">Activar audio</button>
+    <div id="debug">Estado: esperando...</div>
+  </div>
+
+  <!-- Escena A-Frame con MindAR.
+       - imageTargetSrc: apunta a tu archivo .mind (targets.mind)
+       - autoStart: false -> controlaremos manualmente cuando arrancar la AR
+  -->
+  <a-scene mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
+           embedded
+           color-space="sRGB"
+           renderer="colorManagement: true, physicallyCorrectLights"
+           vr-mode-ui="enabled: false"
+           device-orientation-permission-ui="enabled: false">
+
+    <!-- Define assets: el vídeo se declara aquí como asset para poder usarlo como textura. -->
+    <a-assets>
+      <!--
+        Importante:
+        - playsinline / webkit-playsinline: necesario para que en iOS el video no haga full-screen.
+        - muted: recomendado para permitir autoplay en móviles (si quieres audio, veremos el botón 'Activar audio').
+        - crossorigin: si sirves el video desde otro dominio, configura CORS correctamente en el servidor.
+      -->
+      <video id="ar-video"
+             src="video.mp4"
+             preload="auto"
+             loop="false"
+             playsinline
+             webkit-playsinline
+             muted
+             crossorigin="anonymous"
+             ></video>
+      <!-- (opcional) poster o imagen del marcador, para mostrar en el plano si quieres -->
+      <img id="marker-img" src="marker.png" alt="marker" />
+    </a-assets>
+
+    <!-- Cámara A-Frame (sin look-controls; el AR ya controla la cámara) -->
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- Entity que aparece cuando se detecta el targetIndex: 0 (primer target en targets.mind) -->
+    <a-entity id="video-target" mindar-image-target="targetIndex: 0">
+      <!-- Plano donde proyectaremos el vídeo -->
+      <!-- Usamos material shader:flat para que no aplique iluminación compleja -->
+      <a-plane id="video-plane"
+               position="0 0 0"
+               rotation="0 0 0"
+               width="1" height="0.5625"  <!-- 16:9 -> 1 x 0.5625 -->
+               material="shader: flat; src: #ar-video;">
+      </a-plane>
+    </a-entity>
+
+  </a-scene>
+
+  <!-- Script de control: eventos targetFound/targetLost y manejo de autoplay/audio -->
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const sceneEl = document.querySelector('a-scene');
+    const arVideo = document.getElementById('ar-video');
+    const target = document.getElementById('video-target');
+    const debug = document.getElementById('debug');
+    const startBtn = document.getElementById('start-ar-btn');
+    const stopBtn = document.getElementById('stop-ar-btn');
+    const unmuteBtn = document.getElementById('unmute-btn');
+
+    let arSystem = null;
+    // Cuando la escena cargue, obtenemos el sistema ar (arSystem) para control run/pause.
+    sceneEl.addEventListener('loaded', () => {
+      arSystem = sceneEl.systems["mindar-image-system"];
+      debug.innerText = 'Estado: listo (AR cargada)';
+    });
+
+    // 1) EVENTOS: targetFound / targetLost
+    // Al detectar el marcador: reproducimos el video (desde 0 por ejemplo)
+    target.addEventListener('targetFound', async (e) => {
+      debug.innerText = 'Estado: marcador encontrado → reproduciendo video';
+      try {
+        // Reiniciamos al inicio (opcional) y reproducimos.
+        arVideo.currentTime = 0;
+        // play() devuelve una Promise; en móviles puede ser rechazada si no cumple política.
+        await arVideo.play();
+      } catch (err) {
+        // Si falla autoplay (política de navegador), podemos mostrar un botón para que el usuario inicie el audio.
+        console.warn('play() rejected:', err);
+        debug.innerText = 'Autoplay bloqueado por el navegador. Toca "Activar audio"';
+        // Mostramos botón para que el usuario active audio y reproduzca manualmente.
+        unmuteBtn.style.display = 'inline-block';
+      }
+    });
+
+    // Al perder el marcador: pausamos el video (y opcionalmente volver al inicio)
+    target.addEventListener('targetLost', (e) => {
+      debug.innerText = 'Estado: marcador perdido → pausa video';
+      arVideo.pause();
+      // Si prefieres que el video vuelva al inicio cada vez:
+      // arVideo.currentTime = 0;
+    });
+
+    // 2) Controles AR: start / stop / pause / unpause (usa arSystem disponible después de 'loaded')
+    startBtn.addEventListener('click', () => {
+      if (!arSystem) { console.warn('arSystem no disponible todavía'); return; }
+      arSystem.start();  // arranca cámara y motor AR (ver docs MindAR para arSystem API)
+      debug.innerText = 'Estado: AR iniciada';
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (!arSystem) { console.warn('arSystem no disponible todavía'); return; }
+      arSystem.stop();
+      // Asegúrate de pausar video si la AR se detuvo.
+      arVideo.pause();
+      debug.innerText = 'Estado: AR detenida';
+    });
+
+    // 3) Botón 'Activar audio' (necesario en muchos móviles para desbloquear sonido)
+    unmuteBtn.addEventListener('click', async () => {
+      // Quitar 'muted' y reproducir
+      arVideo.muted = false;
+      try {
+        await arVideo.play();
+        unmuteBtn.style.display = 'none';
+        debug.innerText = 'Estado: audio activado';
+      } catch (err) {
+        console.warn('No se pudo reproducir tras unmute:', err);
+        debug.innerText = 'No se pudo reproducir tras activación de audio';
+      }
+    });
+
+    // 4) Eventos globales AR ready / error (opcional)
+    sceneEl.addEventListener('arReady', ()=> {
+      console.log('MindAR: arReady');
+    });
+    sceneEl.addEventListener('arError', (e)=> {
+      console.error('MindAR: arError', e);
+      debug.innerText = 'Error inicializando AR (revisa permisos/cámara)';
+    });
+  });
+  </script>
+
+</body>
+</html>
